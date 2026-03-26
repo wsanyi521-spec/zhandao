@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小站稻·AI数智农业云平台</title>
+    <!-- 引入外部字体和图标 -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- ECharts CDN 用于复杂的图表绘制 (历史数据页等) -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    
+    <style>
+        /* CSS 变量定义 - 淡绿偏透明 Light Theme */
+        :root {
+            --theme-green: #67b526;
+            --theme-green-light: #8dc63f;
+            --theme-yellow: #f6a100;
+            --theme-yellow-bright: #ffcc00;
+            
+            --bg-light-overlay: rgba(255, 255, 255, 0.4);
+            --panel-bg: rgba(230, 245, 220, 0.65);
+            --panel-border: rgba(103, 181, 38, 0.4);
+            
+            --text-main: #143809;
+            --text-sub: #3c6e26;
+            --text-alert: #e74c3c;
+            --text-white: #ffffff;
+
+            --glass-blur: blur(12px);
+            --border-radius: 6px;
+            
+            --font-en: 'Orbitron', sans-serif;
+            --font-zh: 'Noto Sans SC', sans-serif;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background-color: #f0f7ea;
+            background-image: url('https://images.unsplash.com/photo-1595844730298-b960fad375b4?q=80&w=2000&auto=format&fit=crop'); /* 垂直航拍图最适合划定多边形区块 */
+            background-size: cover;
+            background-position: center;
+            background-attachment: fixed;
+            color: var(--text-main);
+            font-family: var(--font-zh);
+            height: 100vh;
+            width: 100vw;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        body::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: var(--bg-light-overlay);
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        .app-container {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            height: 100%;
+            padding: 0 15px 15px 15px;
+        }
+
+        /* ----- 头部组件 ----- */
+        .header {
+            height: 70px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: relative;
+            margin-bottom: 10px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.9) 0%, rgba(255,255,255,0) 100%);
+        }
+        .header::after {
+            content: '';
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 3px; background: var(--theme-green);
+        }
+        .header-nav {
+            display: flex; gap: 30px; font-size: 18px; font-weight: 500; color: var(--text-sub); padding: 0 40px;
+        }
+        .nav-link {
+            cursor: pointer; transition: all 0.3s; padding: 5px 10px; border-radius: 4px;
+        }
+        .nav-link:hover { color: var(--theme-green); background: rgba(255,255,255,0.5); }
+        .nav-link.active {
+            color: var(--theme-green); font-weight: 700; background: rgba(255,255,255,0.8); border: 1px solid var(--theme-green);
+        }
+        .header-title {
+            font-size: 34px; font-weight: 700; color: var(--theme-green); letter-spacing: 4px;
+            text-shadow: 2px 2px 4px rgba(255,255,255,0.8); text-align: center;
+            position: absolute; left: 50%; transform: translateX(-50%);
+        }
+
+        /* ----- 单页SPA容器机制 ----- */
+        .view-layer {
+            display: none;
+            flex: 1;
+            gap: 15px;
+            height: calc(100vh - 95px);
+            animation: fadeIn 0.4s ease-out;
+        }
+        .view-layer.active {
+            display: flex;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ----- 侧边栏及卡片重用样式 (可滑动) ----- */
+        .panel-side {
+            width: 25%;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            height: 100%;
+        }
+        .panel-center {
+            width: 50%; display: flex; flex-direction: column; justify-content: space-between; height: 100%; position: relative;
+        }
+        /* 可滚动容器 */
+        .scrollable {
+            overflow-y: auto; overflow-x: hidden;
+        }
+        /* 滚动条美化 */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: rgba(103, 181, 38, 0.5); border-radius: 4px; }
+        ::-webkit-scrollbar-track { background: rgba(255,255,255,0.1); }
+
+        .card {
+            background: var(--panel-bg); backdrop-filter: var(--glass-blur); -webkit-backdrop-filter: var(--glass-blur);
+            border: 1px solid var(--panel-border); border-radius: var(--border-radius);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            display: flex; flex-direction: column; position: relative;
+            flex-shrink: 0; /* 防止flex下被过度挤压 */
+        }
+        .card-header {
+            background: var(--theme-green); padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;
+        }
+        .card-title {
+            font-size: 16px; font-weight: 700; color: var(--text-white); display: flex; align-items: center; gap: 8px; letter-spacing: 1px;
+        }
+        .card-body {
+            padding: 12px 15px; flex: 1; display: flex; flex-direction: column;
+        }
+        
+        /* 农田选择按钮 */
+        .center-top-tabs {
+            display: flex; justify-content: center; gap: 20px; margin-top: 10px;
+        }
+        .field-tab {
+            padding: 8px 30px; background: rgba(255, 255, 255, 0.7); border: 2px solid var(--theme-green);
+            color: var(--theme-green); font-size: 18px; font-weight: 700; border-radius: 20px; cursor: pointer;
+            backdrop-filter: var(--glass-blur); transition: all 0.3s; box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        }
+        .field-tab:hover, .field-tab.active {
+            background: var(--theme-green); color: var(--text-white);
+        }
+
+        /* 内部UI组件 - Grid / Gauges / Switches 等 */
+        .env-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px; }
+        .env-item { display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.6); border: 1px solid rgba(103, 181, 38, 0.2); padding: 8px; border-radius: 4px; }
+        .env-icon { font-size: 24px; color: var(--theme-green); }
+        .env-data { display: flex; flex-direction: column; }
+        .env-val { font-family: var(--font-en); font-weight: 700; font-size: 18px; color: var(--text-main); transition: 0.3s; }
+        .env-name { font-size: 12px; color: var(--text-sub); font-weight: 500; }
+
+        .slider-switch-grid { display: grid; grid-template-columns: 1fr; gap: 10px; width: 100%; }
+        /* 在设备中心等满屏页面改为多列 */
+        .multi-col-grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+        
+        .switch-item {
+            display: flex; justify-content: space-between; align-items: center;
+            background: rgba(255,255,255,0.8); border: 1px solid rgba(103, 181, 38, 0.3);
+            padding: 10px 15px; border-radius: 6px; font-size: 14px; font-weight: 500; box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        }
+        .toggle { position: relative; display: inline-block; width: 44px; height: 24px; }
+        .toggle input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider {
+            position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #cbdca0; transition: .4s; border-radius: 34px;
+        }
+        .toggle-slider:before {
+            position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background-color: white; transition: .4s; border-radius: 50%; box-shadow: 1px 1px 3px rgba(0,0,0,0.3);
+        }
+        .toggle input:checked + .toggle-slider { background-color: var(--theme-green); }
+        .toggle input:checked + .toggle-slider:before { transform: translateX(20px); }
+
+        /* 监控画面与日志 */
+        .video-box {
+            position: relative; width: 100%; height: 280px; flex-shrink:0; background: #fff; border: 2px solid var(--theme-green);
+            border-radius: 4px; display: flex; justify-content: center; align-items: center; overflow: hidden; margin-bottom: 25px;
+        }
+        .video-box img { width: 100%; height: 100%; object-fit: cover; }
+        .video-box::after { content: 'LIVE'; position: absolute; top:10px; right:10px; background: rgba(231,76,60, 0.9); color: white; padding: 2px 8px; border-radius: 4px; font-weight:bold; font-size:12px; }
+
+        .alarm-item {
+            display: flex; justify-content: space-between; align-items: center;
+            background: rgba(255,255,255,0.7); border: 1px solid rgba(103, 181, 38, 0.2);
+            padding: 12px 10px; border-radius: 4px; border-left: 4px solid var(--theme-green); font-size: 14px; font-weight: 500; margin-bottom:10px;
+        }
+        
+        /* 其他大面板专用样式 */
+        .full-page-card { width: 100%; height: 100%; }
+        .list-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        .list-table th, .list-table td { padding: 12px 15px; text-align: left; border-bottom: 1px solid rgba(103, 181, 38, 0.2); }
+        .list-table th { background: rgba(103, 181, 38, 0.1); color: var(--theme-green); font-weight: bold; }
+        .list-table tr:hover { background: rgba(255,255,255,0.5); }
+
+        /* 商店网格 */
+        .store-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 20px; padding: 20px; }
+        .store-item { background: white; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.1); border: 1px solid rgba(0,0,0,0.05); }
+        .store-img { width: 100%; height: 160px; object-fit: cover; }
+        .store-info { padding: 15px; }
+        .store-price { color: var(--text-alert); font-size: 20px; font-weight: bold; margin-top: 10px; display:block; }
+        .buy-btn { width: 100%; padding: 8px; border: none; background: var(--theme-green); color: white; border-radius: 4px; font-weight: bold; cursor: pointer; transition: 0.3s; margin-top:10px; }
+        .buy-btn:hover { background: var(--text-sub); }
+
+        /* 交互式地图区块多边形样式 */
+        .farm-poly {
+            fill: rgba(141, 198, 63, 0.5); /* 稻谷绿色填充 */
+            stroke-width: 0.5;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .farm-poly:hover { fill: rgba(141, 198, 63, 0.7); }
+
+        #poly-1 { stroke: white; }
+        #poly-2 { stroke: var(--theme-green-light); }
+        #poly-3 { stroke: #3498db; }
+        
+        #poly-1.active-poly { fill: rgba(103, 181, 38, 0.85); stroke-width: 1.5; filter: drop-shadow(0 0 5px white); }
+        #poly-2.active-poly { fill: rgba(141, 198, 63, 0.85); stroke-width: 1.5; filter: drop-shadow(0 0 5px var(--theme-green-light)); }
+        #poly-3.active-poly { fill: rgba(52, 152, 219, 0.85); stroke-width: 1.5; filter: drop-shadow(0 0 5px #3498db); }
+
+        .poly-text {
+            font-size: 4px; /* 百分比缩放 */
+            font-family: var(--font-zh);
+            fill: white;
+            font-weight: 700;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+            pointer-events: none; /* 让点击穿透给多边形 */
+        }
+
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    
+    <!-- Header Navigation -->
+    <header class="header">
+        <div class="header-nav" style="flex:1;">
+            <span class="nav-link active" onclick="switchView('dashboard')">主菜单</span>
+            <span class="nav-link" onclick="switchView('device')">设备控制</span>
+            <span class="nav-link" onclick="switchView('settings')">设置</span>
+        </div>
+        <div class="header-title">
+            强菌助农大数据监测平台
+        </div>
+        <div class="header-nav" style="flex:1; justify-content: flex-end;">
+            <span class="nav-link" onclick="switchView('monitor')">监测数据</span>
+            <span class="nav-link" onclick="switchView('store')">商品商店</span>
+            <span class="nav-link" onclick="switchView('history')">历史数据</span>
+        </div>
+        <div style="position: absolute; left: 40px; bottom: -28px; font-family: var(--font-en); color: var(--text-main); font-size: 14px; font-weight:bold;" id="sysTime"></div>
+        <div style="position: absolute; right: 40px; bottom: -28px; color: var(--text-main); font-size: 14px; font-weight:bold;">晴 ☀️ 22~28℃ | 设备在线率 98.5%</div>
+    </header>
+
+    <!-- ==================== 1. 主菜单 (Dashboard) ==================== -->
+    <main id="view-dashboard" class="view-layer active">
+        <!-- 左侧面板 (可滑动) -->
+        <div class="panel-side scrollable" style="padding-right: 5px;">
+            <div class="card" style="min-height: 400px;">
+                <div class="card-header"><div class="card-title">实 时 环 境 监 测</div></div>
+                <div class="card-body">
+                    <div class="env-grid">
+                        <div class="env-item"><i class="fa-solid fa-temperature-half env-icon"></i><div class="env-data"><span class="env-val" id="d-temp">12.5 <span style="font-size:12px;">℃</span></span><span class="env-name">空气温度</span></div></div>
+                        <div class="env-item"><i class="fa-solid fa-droplet env-icon"></i><div class="env-data"><span class="env-val" id="d-hum">68.7 <span style="font-size:12px;">%</span></span><span class="env-name">空气湿度</span></div></div>
+                        <div class="env-item"><i class="fa-solid fa-cloud-sun env-icon"></i><div class="env-data"><span class="env-val" id="d-co2">420.2 <span style="font-size:12px;">ppm</span></span><span class="env-name">二氧化碳</span></div></div>
+                        <div class="env-item"><i class="fa-solid fa-wind env-icon"></i><div class="env-data"><span class="env-val" id="d-wind">3.5 <span style="font-size:12px;">m/s</span></span><span class="env-name">当前风速</span></div></div>
+                        <div class="env-item"><i class="fa-solid fa-temperature-empty env-icon"></i><div class="env-data"><span class="env-val" id="d-stemp">10.5 <span style="font-size:12px;">℃</span></span><span class="env-name">土壤温度</span></div></div>
+                        <div class="env-item"><i class="fa-solid fa-droplet env-icon"></i><div class="env-data"><span class="env-val" id="d-shum">88.7 <span style="font-size:12px;">%</span></span><span class="env-name">土壤湿度</span></div></div>
+                        <div class="env-item"><i class="fa-regular fa-sun env-icon"></i><div class="env-data"><span class="env-val" id="d-light">110.6 <span style="font-size:12px;">klux</span></span><span class="env-name">光照强度</span></div></div>
+                        <div class="env-item"><i class="fa-solid fa-vial env-icon"></i><div class="env-data"><span class="env-val" id="d-ph">6.5 <span style="font-size:12px;">pH</span></span><span class="env-name">土壤酸碱度</span></div></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 墒情图暂用简单的CSS图表替代 -->
+            <div class="card" style="min-height: 250px;">
+                <div class="card-header"><div class="card-title">白 黄 链 霉 菌 剂 活 性</div></div>
+                <div class="card-body">
+                    <div style="background: rgba(255,255,255,0.7); padding: 10px; border-radius:4px; font-weight:bold;">今日喷洒效果：<span style="color:var(--theme-green);font-size:18px;">极佳 (98%)</span></div>
+                    <div style="margin-top:10px; color:var(--text-sub); font-size:13px; line-height:1.6;">
+                        通过无人机精准飞防，有效遏制了稻瘟病趋势。<br>
+                        建议下次作业时间：48小时后。<br>
+                        预计产出增量：+15%
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 中间面板 -->
+        <div class="panel-center">
+            <div class="center-top-tabs">
+                <div class="field-tab active" onclick="switchField(1, this)">第一农田</div>
+                <div class="field-tab" onclick="switchField(2, this)">第二农田</div>
+                <div class="field-tab" onclick="switchField(3, this)">第三农田</div>
+            </div>
+            
+            <!-- 当前选中农田的专属区域微观地图 -->
+            <div id="map-container" style="flex: 1; position: relative; margin: 15px 0; border: 2px solid var(--theme-green-light); border-radius: 8px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.1); background-image: url('./image/1245240371b5ffad0461f60b78ca9f19.jpg'); background-size: cover; background-position: center;">
+                
+                <div style="position:absolute; top:10px; left:10px; background:rgba(0,0,0,0.6); color:white; padding:4px 10px; border-radius:4px; font-size:12px; z-index:5;"><i class="fa-solid fa-map-location-dot"></i> 当前区域子片区划分</div>
+                
+                <svg id="interactive-map" viewBox="0 0 100 100" preserveAspectRatio="none" style="width:100%; height:100%; position:absolute; top:0; left:0;">
+                    
+                    <!-- 第一农田的片区划分 -->
+                    <g id="map-group-1" style="display: block;">
+                        <polygon class="farm-poly" points="5,15 45,5 40,55 10,48" />
+                        <text x="18" y="32" class="poly-text">A片区 (拔节期)</text>
+                        
+                        <polygon class="farm-poly" points="50,5 95,20 85,50 45,55" />
+                        <text x="60" y="32" class="poly-text">B片区 (孕穗期)</text>
+                        
+                        <polygon class="farm-poly" points="15,60 80,55 85,95 5,90" />
+                        <text x="38" y="75" class="poly-text">C片区 (待施肥补水)</text>
+                    </g>
+                    
+                    <!-- 第二农田的片区划分 -->
+                    <g id="map-group-2" style="display: none;">
+                        <polygon class="farm-poly" points="10,10 90,15 85,45 15,50" />
+                        <text x="40" y="30" class="poly-text">防雨棚核心培育区</text>
+                        
+                        <polygon class="farm-poly" points="15,55 85,50 90,95 10,90" />
+                        <text x="42" y="75" class="poly-text">露天自动化灌溉区</text>
+                    </g>
+                    
+                    <!-- 第三农田的片区划分 -->
+                    <g id="map-group-3" style="display: none;">
+                        <polygon class="farm-poly" points="5,5 30,5 35,95 10,90" />
+                        <text x="10" y="50" class="poly-text">良种繁育区</text>
+                        
+                        <polygon class="farm-poly" points="35,10 95,5 90,45 40,50" />
+                        <text x="55" y="30" class="poly-text">水产生态共作区</text>
+                        
+                        <polygon class="farm-poly" points="40,55 90,50 85,95 35,90" />
+                        <text x="55" y="75" class="poly-text">现代化机耕试验区</text>
+                    </g>
+                </svg>
+            </div>
+            
+            <!-- 缩略设备控制 -->
+            <div class="card" style="height: 250px;">
+                <div class="card-header">
+                    <div class="card-title">快 捷 泵 站 控 制</div>
+                    <div style="font-size:12px; color:white; cursor:pointer;" onclick="switchView('device')">查看更多 <i class="fa-solid fa-chevron-right"></i></div>
+                </div>
+                <div class="card-body scrollable">
+                    <div class="slider-switch-grid" style="grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 5px;">
+                        <div class="switch-item"><span>主灌溉泵站 (区域A)</span><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+                        <div class="switch-item"><span>主灌溉泵站 (区域B)</span><label class="toggle"><input type="checkbox"><span class="toggle-slider"></span></label></div>
+                        <div class="switch-item"><span>增压水泵 (2号线)</span><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+                        <div class="switch-item"><span>大棚通风网 (北侧)</span><label class="toggle"><input type="checkbox"><span class="toggle-slider"></span></label></div>
+                        <div class="switch-item"><span>液体追肥输送泵</span><label class="toggle"><input type="checkbox"><span class="toggle-slider"></span></label></div>
+                        <div class="switch-item"><span>滴灌管网 (育苗区)</span><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+                        <div class="switch-item"><span>水肥一体化主控</span><label class="toggle"><input type="checkbox"><span class="toggle-slider"></span></label></div>
+                        <div class="switch-item"><span>太阳能灭虫灯群</span><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 右侧面板 (可滑动) -->
+        <div class="panel-side scrollable" style="padding-right: 5px;">
+            <div class="card">
+                <div class="card-header"><div class="card-title">监 控 摄 像 情 况</div></div>
+                <div class="card-body" style="padding:10px;">
+                    <div class="video-box" style="height: 220px; margin-bottom: 10px;">
+                        <!-- 动态图像，加载本地客户指定监控图片素材 -->
+                        <img id="surveillance-cam" src="./image/631ec4f41921391739c9b24069c36d02.jpg" alt="全景监控">
+                    </div>
+                    <div style="display:flex; justify-content:space-between; font-size:14px; color:var(--text-main); font-weight:bold;">
+                        <span id="cam-name"><i class="fa-solid fa-video"></i> CAM-01 (第一农田主监控)</span>
+                        <span style="color:var(--theme-green);"><i class="fa-solid fa-signal"></i> 信号强</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" style="flex:1;">
+                <div class="card-header"><div class="card-title">监 控 报 警 系 统</div></div>
+                <div class="card-body scrollable">
+                    <div class="alarm-item"><i class="fa-solid fa-info-circle" style="color:var(--theme-green);"></i> <span>03-22 16:00</span> <span>设备例行自检完成</span></div>
+                    <div class="alarm-item" style="border-left-color: var(--text-alert); background: rgba(231,76,60, 0.15);"><i class="fa-solid fa-bell" style="color:var(--text-alert);"></i> <span>03-22 15:45</span> <span style="color:var(--text-alert);">土壤湿度过低警报</span></div>
+                    <div class="alarm-item"><i class="fa-solid fa-check-circle" style="color:var(--theme-green);"></i> <span>03-22 14:10</span> <span>一号阀门已自动关闭</span></div>
+                    <div class="alarm-item"><i class="fa-solid fa-info-circle" style="color:var(--theme-green);"></i> <span>03-22 12:00</span> <span>大模型决策：开始排产</span></div>
+                    <!-- 大量日志以测试滚动 -->
+                    <div class="alarm-item"><i class="fa-solid fa-info-circle" style="color:var(--theme-green);"></i> <span>03-22 11:00</span> <span>主数据服务器同步成功</span></div>
+                    <div class="alarm-item"><i class="fa-solid fa-info-circle" style="color:var(--theme-green);"></i> <span>03-22 10:00</span> <span>登录状态验证成功</span></div>
+                    <div class="alarm-item"><i class="fa-solid fa-info-circle" style="color:var(--theme-green);"></i> <span>03-22 09:00</span> <span>监控云台完成360旋转</span></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ==================== 2. 设备控制 (Device Control) ==================== -->
+    <main id="view-device" class="view-layer">
+        <div class="card full-page-card scrollable" style="padding-right:15px;">
+            <div class="card-header"><div class="card-title"><i class="fa-solid fa-sliders"></i> 全域自动化设备控制中心</div></div>
+            <div class="card-body">
+                <h3 style="margin: 15px 0; color:var(--text-main); border-left: 4px solid var(--theme-green); padding-left:10px;">水利调度站 (共12个设备)</h3>
+                <div class="slider-switch-grid multi-col-grid">
+                    <!-- 生成大量开关 -->
+                    <div class="switch-item"><span>排灌主控阀 (北)</span><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+                    <div class="switch-item"><span>排灌主控阀 (南)</span><label class="toggle"><input type="checkbox"><span class="toggle-slider"></span></label></div>
+                    <div class="switch-item"><span>增压水泵 (1号)</span><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+                    <div class="switch-item"><span>增压水泵 (2号)</span><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+                    <div class="switch-item"><span>增压水泵 (3号)</span><label class="toggle"><input type="checkbox"><span class="toggle-slider"></span></label></div>
+                    <div class="switch-item"><span>深水井潜水泵</span><label class="toggle"><input type="checkbox"><span class="toggle-slider"></span></label></div>
+                    <div class="switch-item"><span>液体肥料搅拌机</span><label class="toggle"><input type="checkbox"><span class="toggle-slider"></span></label></div>
+                    <div class="switch-item"><span>水质净化过滤网</span><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+                </div>
+                
+                <h3 style="margin: 25px 0 15px 0; color:var(--text-main); border-left: 4px solid var(--theme-green); padding-left:10px;">温室大棚控制 (智能大棚群)</h3>
+                <div class="slider-switch-grid multi-col-grid">
+                    <div class="switch-item"><span>大棚天窗电机 (A区)</span><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+                    <div class="switch-item"><span>大棚侧窗电机 (A区)</span><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+                    <div class="switch-item"><span>保温被卷帘机</span><label class="toggle"><input type="checkbox"><span class="toggle-slider"></span></label></div>
+                    <div class="switch-item"><span>遮阳网张开控制</span><label class="toggle"><input type="checkbox"><span class="toggle-slider"></span></label></div>
+                    <div class="switch-item"><span>大棚通风换气扇</span><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+                    <div class="switch-item"><span>二氧化碳发生器</span><label class="toggle"><input type="checkbox"><span class="toggle-slider"></span></label></div>
+                    <div class="switch-item"><span>补光灯阵列</span><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label></div>
+                </div>
+
+                <h3 style="margin: 25px 0 15px 0; color:var(--text-main); border-left: 4px solid var(--theme-green); padding-left:10px;">飞防无人机梯队</h3>
+                <div class="slider-switch-grid multi-col-grid">
+                    <div class="switch-item"><span>飞防机 Alpha-1 (待命)</span><button style="padding:4px 12px; background:var(--theme-green); color:white; border:none; border-radius:4px;">启动任务</button></div>
+                    <div class="switch-item"><span>飞防机 Beta-2 (充电中)</span><button disabled style="padding:4px 12px; background:gray; color:white; border:none; border-radius:4px;">无法操作</button></div>
+                    <div class="switch-item"><span>飞防机 Gamma-3 (巡护)</span><button style="padding:4px 12px; background:#e74c3c; color:white; border:none; border-radius:4px;">召回</button></div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ==================== 3. 设置 (Settings) ==================== -->
+    <main id="view-settings" class="view-layer">
+        <div class="card full-page-card scrollable">
+            <div class="card-header"><div class="card-title"><i class="fa-solid fa-cog"></i> 平台高级设置</div></div>
+            <div class="card-body" style="padding: 20px 40px;">
+                <h2 style="color:var(--theme-green); margin-bottom: 20px;">自动化阈值配置</h2>
+                <div style="background: rgba(255,255,255,0.7); padding: 20px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1);">
+                    <div style="margin-bottom: 15px;">
+                        <label style="display:block; font-weight:bold; margin-bottom:5px;">土壤湿度下限预警阈值 (%)</label>
+                        <input type="number" value="30" style="padding:8px; width:200px; border:1px solid var(--theme-green); border-radius:4px;">
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <label style="display:block; font-weight:bold; margin-bottom:5px;">最高温度自动启动通风扇 (℃)</label>
+                        <input type="number" value="35" style="padding:8px; width:200px; border:1px solid var(--theme-green); border-radius:4px;">
+                    </div>
+                    <div style="margin-bottom: 15px;">
+                        <label style="display:block; font-weight:bold; margin-bottom:5px;">大模型智能排产允许浮动比例 (%)</label>
+                        <input type="number" value="15" style="padding:8px; width:200px; border:1px solid var(--theme-green); border-radius:4px;">
+                    </div>
+                    <button style="padding: 10px 30px; background: var(--theme-green); color:white; border:none; border-radius:4px; font-weight:bold; font-size:16px; cursor:pointer;">保存设置修改</button>
+                </div>
+
+                <h2 style="color:var(--theme-green); margin-bottom: 20px; margin-top:30px;">系统通知偏好</h2>
+                <div style="background: rgba(255,255,255,0.7); padding: 20px; border-radius: 8px; border: 1px solid rgba(0,0,0,0.1);">
+                    <div class="switch-item" style="border:none; box-shadow:none; background:transparent; border-bottom:1px solid #ddd; border-radius:0;">
+                        <span>接收微信小程序推送</span><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label>
+                    </div>
+                    <div class="switch-item" style="border:none; box-shadow:none; background:transparent; border-bottom:1px solid #ddd; border-radius:0;">
+                        <span>严重警报允许短信呼叫站长</span><label class="toggle"><input type="checkbox" checked><span class="toggle-slider"></span></label>
+                    </div>
+                    <div class="switch-item" style="border:none; box-shadow:none; background:transparent; border-radius:0;">
+                        <span>周度数据生成大连报表</span><label class="toggle"><input type="checkbox"><span class="toggle-slider"></span></label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ==================== 4. 监测数据 (Monitor Data) ==================== -->
+    <main id="view-monitor" class="view-layer">
+        <div class="card full-page-card scrollable">
+            <div class="card-header"><div class="card-title"><i class="fa-solid fa-table"></i> 节点实时监测报表台账</div></div>
+            <div class="card-body">
+                <table class="list-table">
+                    <thead>
+                        <tr>
+                            <th>节点编号</th>
+                            <th>所属区域</th>
+                            <th>采集时间</th>
+                            <th>空气温度</th>
+                            <th>空气湿度</th>
+                            <th>土壤温度</th>
+                            <th>土壤湿度</th>
+                            <th>二氧化碳</th>
+                            <th>设备状态</th>
+                        </tr>
+                    </thead>
+                    <tbody id="monitor-tbody">
+                        <!-- JS动态生成大量表格数据以展示滚动 -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- ==================== 5. 商品商店 (Store) ==================== -->
+    <main id="view-store" class="view-layer">
+        <div class="card full-page-card scrollable">
+            <div class="card-header"><div class="card-title"><i class="fa-solid fa-store"></i> 优选小站稻及深加工商品商店</div></div>
+            <div class="card-body store-grid">
+                <!-- 商品区块 1 -->
+                <div class="store-item">
+                    <img class="store-img" src="./image/693e386aa1d944223bea3b6829b28b17.png" alt="商品">
+                    <div class="store-info">
+                        <h3 style="font-size:16px;">精选原味小站稻 (10kg家庭装)</h3>
+                        <span style="font-size:12px; color:gray; display:block; margin-top:5px;">AI 科学种植，颗粒饱满透亮</span>
+                        <span class="store-price">¥ 128.00</span>
+                        <button class="buy-btn">立即采购</button>
+                    </div>
+                </div>
+                <!-- 商品区块 2 -->
+                <div class="store-item">
+                    <img class="store-img" src="./image/b7b615ba7e592d3fde72aeb2424c8e74.png" alt="商品">
+                    <div class="store-info">
+                        <h3 style="font-size:16px;">小站稻津米糕 (深加工甜品)</h3>
+                        <span style="font-size:12px; color:gray; display:block; margin-top:5px;">传统工艺与现代农机结合产物</span>
+                        <span class="store-price">¥ 45.00</span>
+                        <button class="buy-btn">立即采购</button>
+                    </div>
+                </div>
+                <!-- 商品区块 3 -->
+                <div class="store-item">
+                    <img class="store-img" src="./image/e4c8a91c2848c580751b95e8c06f1f6b.png" alt="商品">
+                    <div class="store-info">
+                        <h3 style="font-size:16px;">农业链霉菌剂生物肥料</h3>
+                        <span style="font-size:12px; color:gray; display:block; margin-top:5px;">强菌助农必备，提升土地墒情</span>
+                        <span class="store-price">¥ 890.00 / 吨</span>
+                        <button class="buy-btn">立即采购</button>
+                    </div>
+                </div>
+                <!-- 商品区块 4 -->
+                <div class="store-item">
+                    <img class="store-img" src="./image/f9d0423302f42e8dc7a64c5c3868c0f1.png" alt="商品">
+                    <div class="store-info">
+                        <h3 style="font-size:16px;">精品自热米饭礼盒</h3>
+                        <span style="font-size:12px; color:gray; display:block; margin-top:5px;">品牌溢价高利润产物</span>
+                        <span class="store-price">¥ 158.00</span>
+                        <button class="buy-btn">立即采购</button>
+                    </div>
+                </div>
+                <!-- 商品区块 5 -->
+                 <div class="store-item">
+                    <img class="store-img" src="./image/2e1ae7505c7864261eba4cc726852144.png" alt="商品">
+                    <div class="store-info">
+                        <h3 style="font-size:16px;">高端企业定制糙米</h3>
+                        <span style="font-size:12px; color:gray; display:block; margin-top:5px;">粗粮特供路线</span>
+                        <span class="store-price">¥ 188.00</span>
+                        <button class="buy-btn">立即采购</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- ==================== 6. 历史数据 (History Data) ==================== -->
+    <main id="view-history" class="view-layer scrollable">
+        <div style="padding: 20px; padding-bottom: 80px; width:100%;">
+            
+            <!-- 头部筛选控制台 -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 15px;">
+                <div style="font-size: 18px; font-weight: bold; color: var(--theme-gold);">
+                    <i class="fa-solid fa-chart-line" style="margin-right: 8px;"></i>历史全景数据档案与科学趋势推理
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <select class="control-select" style="background: rgba(20,45,38,0.8); color:white; border:1px solid rgba(141,198,63,0.5); padding:8px; border-radius:4px; outline:none; cursor:pointer;">
+                        <option>第一农田 (主栽区)</option>
+                        <option>第二农田 (防雨棚)</option>
+                        <option>本农场整体核算</option>
+                    </select>
+                    <select class="control-select" style="background: rgba(20,45,38,0.8); color:white; border:1px solid rgba(141,198,63,0.5); padding:8px; border-radius:4px; outline:none; cursor:pointer;">
+                        <option>2023 主季水稻</option>
+                        <option>近 30 天微气象</option>
+                        <option>过去五年趋势</option>
+                    </select>
+                    <button class="buy-btn" style="margin:0; width:auto; padding:8px 20px; font-size:13px; background:var(--theme-gold); color:#000;"><i class="fa-solid fa-file-export"></i> 导出科研级报表</button>
+                </div>
+            </div>
+
+            <!-- 数据聚合横标核心卡片 -->
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px;">
+                <div class="card" style="padding: 15px;">
+                    <div style="font-size: 13px; color: var(--text-sub);">上一季平均亩产(核收)</div>
+                    <div style="font-size: 26px; font-weight: bold; color: white; margin-top: 5px;">840.5 <span style="font-size: 14px; color: var(--text-sub);">kg/亩</span></div>
+                    <div style="font-size: 12px; color: var(--theme-green); margin-top: 8px;"><i class="fa-solid fa-arrow-trend-up"></i> 较传统种植增产 +12.4%</div>
+                </div>
+                <div class="card" style="padding: 15px;">
+                    <div style="font-size: 13px; color: var(--text-sub);">累计智能节约水表</div>
+                    <div style="font-size: 26px; font-weight: bold; color: white; margin-top: 5px;">4,250 <span style="font-size: 14px; color: var(--text-sub);">m³</span></div>
+                    <div style="font-size: 12px; color: var(--theme-green); margin-top: 8px;"><i class="fa-solid fa-droplet"></i> 智慧模型干预水效升至 89%</div>
+                </div>
+                <div class="card" style="padding: 15px;">
+                    <div style="font-size: 13px; color: var(--text-sub);">农药/化肥复合减施量</div>
+                    <div style="font-size: 26px; font-weight: bold; color: white; margin-top: 5px;">- 31.2 <span style="font-size: 14px; color: var(--text-sub);">%</span></div>
+                    <div style="font-size: 12px; color: var(--theme-gold); margin-top: 8px;"><i class="fa-solid fa-leaf"></i> 土壤理化性质优补国家绿标</div>
+                </div>
+                <div class="card" style="padding: 15px;">
+                    <div style="font-size: 13px; color: var(--text-sub);">病害视觉AI拦截阻断</div>
+                    <div style="font-size: 26px; font-weight: bold; color: white; margin-top: 5px;">14 <span style="font-size: 14px; color: var(--text-sub);">起 / 季</span></div>
+                    <div style="font-size: 12px; color: var(--theme-green); margin-top: 8px;"><i class="fa-solid fa-shield-halved"></i> 最终农残检测绝对合格率 100%</div>
+                </div>
+            </div>
+            
+            <!-- 上部大数据图表 -->
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 15px; margin-bottom: 25px;">
+                <div class="card">
+                    <div class="card-header"><div class="card-title">微气象与精准滴灌水肥施加量关联反馈曲线 (30天内真实测点)</div></div>
+                    <div class="card-body">
+                        <div id="echart-weather" style="height: 380px;"></div>
+                    </div>
+                </div>
+                <div class="card">
+                    <div class="card-header"><div class="card-title">品种产能核算评估 (AI大模型预测靶标 vs 实际终端收割)</div></div>
+                    <div class="card-body">
+                        <div id="echart-yield" style="height: 380px;"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 下部科学养分图表 -->
+            <div class="card mb-4">
+                <div class="card-header"><div class="card-title">底层土壤关键营养元素 (全氮-速效磷-速效钾) 整个生长周期测定分布 与 微生物生境活性</div></div>
+                <div class="card-body">
+                    <div id="echart-soil" style="height: 350px;"></div>
+                </div>
+            </div>
+            
+        </div>
+    </main>
+
+</div>
+
+<script>
+    // 时间更新
+    function updateTime() {
+        const now = new Date();
+        const timeString = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
+        const dateString = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}-${now.getDate().toString().padStart(2, '0')}`;
+        document.getElementById('sysTime').innerText = `${dateString} | 本地时间: ${timeString}`;
+    }
+    setInterval(updateTime, 1000);
+    updateTime();
+
+    // =============== SPA 视图切换逻辑 ===============
+    function switchView(viewName) {
+        // 更新导航状态
+        document.querySelectorAll('.nav-link').forEach(el => el.classList.remove('active'));
+        event.currentTarget.classList.add('active');
+        
+        // 隐藏所有视图
+        document.querySelectorAll('.view-layer').forEach(el => el.classList.remove('active'));
+        // 显示目标视图
+        const targetView = document.getElementById('view-' + viewName);
+        if(targetView) {
+            targetView.classList.add('active');
+            
+            // 如果切换到历史数据页面，初始化 Echarts（需要延迟一点确保DOM已显示有了高宽）
+            if (viewName === 'history') {
+                setTimeout(initCharts, 100);
+            }
+        }
+    }
+
+    // =============== 农田数据及监控画面大屏切换逻辑 ===============
+    const fieldData = {
+        1: { 
+             temp: '12.5', hum: '68.7', co2: '420.2', wind: '3.5', stemp: '10.5', shum: '88.7', light: '110.6', ph: '6.5',
+             camName: 'CAM-01 (第一农田主监控)',
+             camImg: './image/631ec4f41921391739c9b24069c36d02.jpg?v=1',
+             mapBg: './image/1245240371b5ffad0461f60b78ca9f19.jpg'
+        },
+        2: { 
+             temp: '13.2', hum: '70.1', co2: '415.0', wind: '4.2', stemp: '11.0', shum: '85.2', light: '125.0', ph: '6.8',
+             camName: 'CAM-02 (第二农田防雨棚)',
+             camImg: './image/a701d586f1ef9010eaba6e465029ee66.jpg?v=1',
+             mapBg: './image/7b0bc04642ac272d329339767e37b581.jpg'
+        },
+        3: { 
+             temp: '11.8', hum: '65.4', co2: '430.5', wind: '2.8', stemp: '9.8', shum: '90.1', light: '95.5', ph: '6.2',
+             camName: 'CAM-03 (第三农田育种组)',
+             camImg: './image/9f86f47b27dbb71c2a307ed92533b05e.jpg?v=1',
+             mapBg: './image/d67addc19b8968f8432048d2647706da.jpg'
+        }
+    };
+
+    function switchField(fieldId, element) {
+        document.querySelectorAll('.field-tab').forEach(el => el.classList.remove('active'));
+        if(element) element.classList.add('active');
+
+        // 切换中心微观地图区背景和对应的 SVG 片区群组
+        document.getElementById('map-group-1').style.display = 'none';
+        document.getElementById('map-group-2').style.display = 'none';
+        document.getElementById('map-group-3').style.display = 'none';
+        
+        const targetGroup = document.getElementById(`map-group-${fieldId}`);
+        if(targetGroup) targetGroup.style.display = 'block';
+
+        // 加载动画体验
+        const fields = ['temp', 'hum', 'co2', 'wind', 'stemp', 'shum', 'light', 'ph'];
+        fields.forEach(f => {
+            const el = document.getElementById(`d-${f}`);
+            el.style.opacity = '0';
+        });
+        
+        const camEl = document.getElementById('surveillance-cam');
+        if (camEl) {
+            camEl.style.transition = 'opacity 0.3s';
+            camEl.style.opacity = '0';
+        }
+
+        setTimeout(() => {
+            const data = fieldData[fieldId];
+            
+            // 更新环境数据
+            document.getElementById('d-temp').innerHTML = `${data.temp} <span style="font-size:12px;">℃</span>`;
+            document.getElementById('d-hum').innerHTML = `${data.hum} <span style="font-size:12px;">%</span>`;
+            document.getElementById('d-co2').innerHTML = `${data.co2} <span style="font-size:12px;">ppm</span>`;
+            document.getElementById('d-wind').innerHTML = `${data.wind} <span style="font-size:12px;">m/s</span>`;
+            document.getElementById('d-stemp').innerHTML = `${data.stemp} <span style="font-size:12px;">℃</span>`;
+            document.getElementById('d-shum').innerHTML = `${data.shum} <span style="font-size:12px;">%</span>`;
+            document.getElementById('d-light').innerHTML = `${data.light} <span style="font-size:12px;">klux</span>`;
+            document.getElementById('d-ph').innerHTML = `${data.ph} <span style="font-size:12px;">pH</span>`;
+            
+            // 更新监控摄像头画面和名称
+            if (camEl) {
+                camEl.src = data.camImg;
+                camEl.style.opacity = '1';
+                document.getElementById('cam-name').innerHTML = `<i class="fa-solid fa-video"></i> ${data.camName}`;
+            }
+            
+            // 更新中心微小地图区的真实航拍底图
+            document.getElementById('map-container').style.backgroundImage = `url('${data.mapBg}')`;
+            
+            // 恢复透明度（取消了整个身体背景画面的跳变，因为这样会让已勾勒的多边形区域违和）
+            fields.forEach(f => {
+                document.getElementById(`d-${f}`).style.opacity = '1';
+            });
+        }, 300);
+    }
+
+    // =============== 检测数据页 假表格生成 ===============
+    const tbody = document.getElementById('monitor-tbody');
+    for (let i = 1; i <= 30; i++) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>Node-${1000 + i}</td>
+            <td>第${(i % 3) + 1}农田 - 区块${String.fromCharCode(65 + (i % 5))}</td>
+            <td>2024-06-25 10:${(i * 2).toString().padStart(2,'0')}:00</td>
+            <td>${(20 + Math.random() * 10).toFixed(1)} ℃</td>
+            <td>${(50 + Math.random() * 30).toFixed(1)} %</td>
+            <td>${(15 + Math.random() * 5).toFixed(1)} ℃</td>
+            <td>${(70 + Math.random() * 20).toFixed(1)} %</td>
+            <td>${Math.floor(400 + Math.random() * 100)} ppm</td>
+            <td style="color:var(--theme-green); font-weight:bold;">运行正常</td>
+        `;
+        tbody.appendChild(tr);
+    }
+
+    // =============== ECharts 初始化 (供历史数据使用) ===============
+    let chartsInitialized = false;
+    function initCharts() {
+        if(chartsInitialized) return;
+        
+        // 生成模拟数据的共同 X 轴变量
+        const days30 = Array.from({length: 30}, (_, i) => `03-${(i+1).toString().padStart(2,'0')}`);
+        const tempData = days30.map(() => 15 + Math.random() * 8 - 4); // 模拟空气温度 11~19度波动
+        const humData = days30.map(() => 60 + Math.random() * 30);     // 模拟土壤湿度 60~90%波动
+        const waterData = days30.map((_, i) => i % 5 === 0 ? Math.random() * 40 + 20 : 0); // 随机水肥补充
+
+        // 1. 复杂科学混合图（折线+柱状混合，双Y轴）-> 替换挂载到 echart-weather
+        var chartWeather = echarts.init(document.getElementById('echart-weather'));
+        chartWeather.setOption({
+            tooltip: { trigger: 'axis', backgroundColor: 'rgba(20,45,38,0.95)', borderColor: 'rgba(141,198,63,0.5)', textStyle: {color: '#fff'} },
+            legend: { data: ['整体气温(℃)', '根部土壤体湿度(%)', '精量水肥溶液瞬时介入(L)'], textStyle: {color: '#ddd'}, top: 0 },
+            grid: { left: '3%', right: '4%', bottom: '5%', top: '15%', containLabel: true },
+            xAxis: { type: 'category', data: days30, axisLine:{lineStyle:{color:'rgba(255,255,255,0.3)'}}, axisLabel:{color:'#aaa', interval: 4} },
+            yAxis: [
+                { type: 'value', name: '指标趋势(℃/%)', nameTextStyle: {color:'#aaa'}, splitLine:{lineStyle:{color:'rgba(255,255,255,0.1)', type: 'dashed'}}, axisLabel:{color:'#aaa'} },
+                { type: 'value', name: '无人干预溶液量(L)', nameTextStyle: {color:'#aaa'}, splitLine:{show:false}, axisLabel:{color:'#aaa'} }
+            ],
+            series: [
+                { name: '整体气温(℃)', type: 'line', smooth: true, yAxisIndex: 0, lineStyle:{color: '#3498db', width: 2}, itemStyle:{color: '#3498db'}, symbol: 'none', data: tempData.map(v => v.toFixed(1)) },
+                { name: '根部土壤体湿度(%)', type: 'line', smooth: true, yAxisIndex: 0, lineStyle:{color: '#8dc63f', width: 2}, itemStyle:{color: '#8dc63f'}, symbol: 'none', areaStyle:{color: new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(141,198,63,0.4)'},{offset:1,color:'rgba(141,198,63,0)'}])}, data: humData.map(v => v.toFixed(1)) },
+                { name: '精量水肥溶液瞬时介入(L)', type: 'bar', yAxisIndex: 1, barWidth: '40%', itemStyle: { color: new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#d4af37'},{offset:1,color:'rgba(212,175,55,0.2)'}])}, data: waterData.map(v => v.toFixed(0)) }
+            ]
+        });
+
+        // 2. 预测与核收柱状图 -> 替换挂载到 echart-yield
+        var chartYield = echarts.init(document.getElementById('echart-yield'));
+        chartYield.setOption({
+            tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, backgroundColor: 'rgba(20,45,38,0.95)', borderColor: 'rgba(255,255,255,0.2)', textStyle: {color: '#fff'} },
+            legend: { data: ['大模型环境推演预测产量', '作物采收实际最终产出'], textStyle: {color: '#ddd'}, top: 0, itemWidth: 10, itemHeight: 10 },
+            grid: { left: '3%', right: '4%', bottom: '5%', top: '15%', containLabel: true },
+            xAxis: { type: 'category', data: ['主发A区', '品种交互B区', '生菜温棚', '育种组'], axisLine:{lineStyle:{color:'rgba(255,255,255,0.3)'}}, axisLabel:{color:'#aaa', interval:0} },
+            yAxis: { type: 'value', name: '斤/亩 (标收)', nameTextStyle:{color:'#aaa'}, splitLine:{lineStyle:{color:'rgba(255,255,255,0.1)'}}, axisLabel:{color:'#aaa'} },
+            series: [
+                { name: '大模型环境推演预测产量', type: 'bar', barGap: '0%', data: [800, 850, 920, 780], itemStyle:{color: 'rgba(52,152,219,0.5)'} },
+                { name: '作物采收实际最终产出', type: 'bar', data: [820, 840, 960, 795], itemStyle:{color: '#8dc63f'} }
+            ]
+        });
+
+        // 3. 土壤 N-P-K 营养级分布及微生物活性图 -> 挂载到全新的 echart-soil
+        var chartSoil = echarts.init(document.getElementById('echart-soil'));
+        chartSoil.setOption({
+            tooltip: { trigger: 'axis', backgroundColor: 'rgba(20,45,38,0.95)', borderColor: 'none', textStyle: {color: '#fff'} },
+            legend: { data: ['全层氮极度(N)', '速效磷量(P)', '缓释钾含量(K)', '根系微生物基底生境生态活性'], textStyle: {color: '#ddd'}, top: 0 },
+            grid: { left: '3%', right: '4%', bottom: '5%', top:'15%', containLabel: true },
+            xAxis: { type: 'category', boundaryGap: false, data: ['插秧返青期', '分蘖盛期', '拔节孕穗期', '抽穗开花期', '乳熟期', '完熟收割期', '土地休耕保养期'], axisLine:{lineStyle:{color:'rgba(255,255,255,0.3)'}}, axisLabel:{color:'#aaa'} },
+            yAxis: [
+                { type: 'value', name: '有效浓度 (mg/kg)', nameTextStyle: {color:'#aaa'}, splitLine:{lineStyle:{color:'rgba(255,255,255,0.1)', type: 'dashed'}}, axisLabel:{color:'#aaa'} },
+                { type: 'value', name: '活性微波谱区间', show: false, max: 100 }
+            ],
+            series: [
+                { name: '全层氮极度(N)', type: 'line', smooth: true, data: [120, 110, 80, 150, 130, 90, 70], lineStyle:{color:'#e74c3c', width:2}, itemStyle:{color:'#e74c3c'} },
+                { name: '速效磷量(P)', type: 'line', smooth: true, data: [45, 40, 35, 60, 55, 45, 30], lineStyle:{color:'#f1c40f', width:2}, itemStyle:{color:'#f1c40f'} },
+                { name: '缓释钾含量(K)', type: 'line', smooth: true, data: [110, 100, 95, 130, 120, 100, 85], lineStyle:{color:'#9b59b6', width:2}, itemStyle:{color:'#9b59b6'} },
+                { 
+                    name: '根系微生物基底生境生态活性', type: 'line', yAxisIndex: 1, smooth: true, symbol: 'diamond', symbolSize: 8,
+                    areaStyle: {color: 'rgba(52,152,219,0.15)'}, lineStyle:{type: 'dashed', color: '#3498db', width:2}, itemStyle:{color:'#3498db'}, 
+                    data: [40, 55, 65, 80, 75, 40, 30] 
+                }
+            ]
+        });
+
+        chartsInitialized = true;
+        
+        // 响应式 Resize
+        window.addEventListener('resize', () => {
+            chartYield.resize();
+            chartWeather.resize();
+            chartSoil.resize();
+        });
+    }
+
+</script>
+
+</body>
+</html>
